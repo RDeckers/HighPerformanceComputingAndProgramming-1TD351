@@ -23,8 +23,8 @@ int main(int argc, char **argv)
 {
   int N, i;
   struct timespec T;
-  int use_refference = (argc == 1);
-  if(argc > 2){
+  int use_refference = 1;
+  if(argc >= 2){
     report(WARN, "Superflous arguments given");
   }
   N = use_refference ? 7 : atoi(argv[1]);
@@ -38,12 +38,12 @@ int main(int argc, char **argv)
   tick(&T);
   use_refference ? create_ref_star_array(stars, N) : create_random_array(stars, N);
   report(PASS, "Created star array in %ens", elapsed_since(&T));
-  //print_stars(stars, N);
+  print_stars(stars, N);
 
   tick(&T);
   sort(stars, N);
   report(PASS, "Sorted star array in %ens", elapsed_since(&T));
-  //print_stars(stars, N);
+  print_stars(stars, N);
 
   float_t *matrix = malloc(sizeof(float_t)*N*N);
   if(!matrix){
@@ -61,12 +61,12 @@ int main(int argc, char **argv)
   fill_matrix(stars, matrix, N);
   report(PASS, "Filled matrix in %ens", elapsed_since(&T));
 
-  //print_matrix(matrix, N);
+  print_matrix(matrix, N);
 
   tick(&T);
   create_tally_matrix(matrix, tally, N);
   report(PASS, "Created tally matrix in %ens", elapsed_since(&T));
-  //print_matrix(tally, N-2);
+  print_matrix(tally, N-2);
   int *histogram = calloc(NUM_HIST_BOXES,sizeof(int));
   tick(&T);
   hist_param_t histparams = generate_histogram(tally, histogram, N-2, NUM_HIST_BOXES);
