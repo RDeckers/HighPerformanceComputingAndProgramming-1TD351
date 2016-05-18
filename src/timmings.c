@@ -14,6 +14,7 @@
 #include <errno.h>
 #include <string.h>
 #include <utilities/logging.h>
+#include <utilities/integer.h>
 #include <utilities/benchmarking.h>
 #include <math.h>
 #include <time.h>
@@ -35,12 +36,12 @@ int main(int argc, char **argv)
       report(FAIL, "Failed to allocate star array: %s (%d)", strerror(errno), errno);
       return -1;
     }
-    float_t *matrix = malloc(sizeof(float_t)*N*N);
+    float_t *matrix = malloc(sizeof(float_t)*triag_nr(N));
     if(!matrix){
       report(FAIL, "Failed to allocate matrix: %s (%d)", strerror(errno), errno);
       return -1;
     }
-    float_t *tally = malloc(sizeof(float_t)*(N-2)*(N-2));
+    float_t *tally = malloc(sizeof(float_t)*triag_nr(N-2));
     if(!matrix){
       report(FAIL, "Failed to allocate tally: %s (%d)", strerror(errno), errno);
       return -1;

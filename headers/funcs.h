@@ -16,6 +16,10 @@
 unsigned rng();
 float_t rngf(float_t min, float_t max);
 
+unsigned sym_matrix_coordinate(unsigned x, unsigned y, unsigned size);
+float_t sym_matrix_get(float_t *matrix, unsigned x, unsigned y, unsigned size);
+void sym_matrix_set(float_t *matrix, float_t value, unsigned x, unsigned y, unsigned size);
+
 void create_random_array(star_t * array, int size);
 void sort(star_t* array, int n);
 void print_stars(star_t* array, int n);
