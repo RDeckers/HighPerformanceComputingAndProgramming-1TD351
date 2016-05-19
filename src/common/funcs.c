@@ -38,12 +38,10 @@ float_t rngf(float_t min, float_t max){
 }
 
 unsigned sym_matrix_coordinate(unsigned x, unsigned y, unsigned size){ //http://stackoverflow.com/q/19143657/6019199
-  // unsigned index = x + (size-1)*y - (y*y-y) / 2;
-  ////report(INFO, "(%u, %u) -> %u (%u)", x,y, x+triag_nr(size)-triag_nr(size-y)-y, size);
-  if(x < y){
+  if(x < y){//TODO: can we do this branchless?
     return sym_matrix_coordinate(y,x,size);
   }
-  return x+triag_nr(size)-triag_nr(size-y)-y; //triag_nr can overflow for > sqrt(UNSIGNED_MAX), 64k for 32 bit.
+  return x+triag_nr(size)-triag_nr(size-y)-y; //triag_nr can overflow for > sqrtf(UNSIGNED_MAX), 64k for 32 bit.
 }
 
 float_t sym_matrix_get(float_t *matrix, unsigned x, unsigned y, unsigned size){
@@ -54,95 +52,176 @@ void sym_matrix_set(float_t *matrix, float_t value, unsigned x, unsigned y, unsi
   matrix[sym_matrix_coordinate(x,y,size)] = value;
 }
 
-star_t create_random_star(){
-  const unsigned n_types = 9;
-  const char types[9] = {'O', 'B', 'A', 'F', 'G', 'K', 'M', 'L', 'T'};
-  return (star_t){
-    //.index = 0;//unused
-    .spectralType = types[rng()%n_types],           // random: O, B, A, F, G, K, M, L, T
-    .subType = rng() % 9,      // random: 0-9
-    .magnitude = rngf(-10, +20),           // random: (-10, +20)
-    //.designation[9] = ""; 	       // sprintf("%c%d.%d", spectralType, subType, index)
-    .position = {
-      .x = rngf(-1e5, 1e5),
-      .y = rngf(-1e5, 1e5),
-      .z = rngf(-3e3, 3e3)
-    }
-  };
+star_array_t star_array_initialize(size_t size){
+  star_array_t star_array;
+  star_array.spectralType = malloc(sizeof(char)*size);
+  star_array.index = malloc(sizeof(unsigned)*size);
+  size = (size+7) & ~7;//round up to multiple of 8.
+  star_array.magnitude = _mm_malloc(sizeof(float_t)*size, 32);
+  star_array.subType = _mm_malloc(sizeof(float_t)*size, 32);
+  star_array.position.x = _mm_malloc(sizeof(float_t)*size, 32);
+  star_array.position.y = _mm_malloc(sizeof(float_t)*size, 32);
+  star_array.position.z = _mm_malloc(sizeof(float_t)*size, 32);
+  return star_array;
 }
 
-void create_random_array(star_t * stars, int size)
-{
-  for(unsigned u = 0; u < size; u++){
-    stars[u] = create_random_star();
+void star_array_free(star_array_t star_array){
+  free(star_array.spectralType);
+  free(star_array.index);
+  _mm_free(star_array.magnitude);
+  _mm_free(star_array.subType);
+  _mm_free(star_array.position.x);
+  _mm_free(star_array.position.y);
+  _mm_free(star_array.position.z);
+}
+
+void create_random_array(star_array_t stars, unsigned N){
+  const unsigned n_types = 9;
+  const char types[9] = {'O', 'B', 'A', 'F', 'G', 'K', 'M', 'L', 'T'};
+  for(unsigned u = 0; u < N; u++){
+    stars.index[u] = u;
+    stars.spectralType[u] = types[rng()%n_types];
+    stars.subType[u] = rng() % 9;
+    stars.magnitude[u] = rngf(-10, +20);
+    stars.position.x[u] = rngf(-1e5, 1e5);
+    stars.position.y[u] = rngf(-1e5, 1e5);
+    stars.position.z[u] = rngf(-1e5, 1e5);
+    //TODO: change print function to work with this.
+    //sprintf(stars.designation[u], "%c%d.%d", stars.spectralType[u], stars.subType[u], stars.index[u]); //not safe for index >= 10^7
   }
 }
 
-void print_stars(star_t* array, int n)
+void print_stars(star_array_t array, unsigned n)
 {
-  int i;
-  printf("\nprint_stars, n = %d:\n", n);
-  for(i = 0; i<n; i++)
-    printf("%s ",array[i].designation);
+  printf("\nprint_stars, n = %u:\n", n);
+  for(unsigned i = 0; i<n; i++)
+    printf("%c%d.%u ",array.spectralType[i], (int)array.subType[i], array.index[i]);
   printf("\n");
+}
+
+float_t len_3d(float_t x, float_t y, float_t z){
+  return sqrtf(x*x+y*y+z*z);
+}
+
+v8f len_3d_vec(v8f x, v8f y, v8f z){
+  return _mm256_sqrt_ps(x*x+y*y+z*z);
 }
 
 float_t dist_3d(float_t x0, float_t y0, float_t z0, float_t x1, float_t y1, float_t z1){
   float_t dx = (x0-x1);
   float_t dy = (y0-y1);
   float_t dz = (z0-z1);
-  return sqrt(dx*dx+dy*dy+dz*dz);
+  return len_3d(dx, dy, dz);
 }
 
-float_t star_dist(star_t a, star_t b){ //symmetrical, pure
-  return dist_3d(a.position.x, a.position.y, a.position.z, b.position.x, b.position.y, b.position.z);
+//TODO: use struct index notation.
+v8f dist_3d_vec(v8f x0, v8f y0, v8f z0, v8f x1, v8f y1, v8f z1){
+  v8f dx = (x0-x1);
+  v8f dy = (y0-y1);
+  v8f dz = (z0-z1);
+  return len_3d_vec(dx, dy, dz);
 }
 
-float_t starfunc(star_t a, star_t b){ //symmetrical, pure
-  unsigned short x = a.subType;
-  unsigned short y = b.subType;
-  return sqrt(x + y + x*y/0.6);
+float_t starfunc(float_t a, float_t b){ //symmetrical, pure
+  //v8f x = _mm256_broadcast_ps(stars.subType[a]);
+  //v8f y = *((v8d*)&stars.subType[b]);
+  const float_t c = 1.0/0.6; //compile time evaluation.
+  return sqrtf(b+a*(1+b*c));//2 * FMA, 1 SQRT//TODO:replace sqrt with something faster http://stackoverflow.com/questions/1528727/why-is-sse-scalar-sqrtx-slower-than-rsqrtx-x
+}
+
+v8f starfunc_vec(v8f a, v8f b){ //symmetrical, pure
+  //v8f x = _mm256_broadcast_ps(stars.subType[a]);
+  //v8f y = *((v8d*)&stars.subType[b]);
+  const float_t c = 1.0/0.6; //compile time evaluation.
+  return _mm256_sqrt_ps(b+a*(1+b*c));//2 * FMA, 1 SQRT//TODO:replace sqrt with something faster http://stackoverflow.com/questions/1528727/why-is-sse-scalar-sqrtx-slower-than-rsqrtx-x
 }
 
 
-void sort(star_t* array, int n){//Quicksort, modified from http://rosettacode.org/wiki/Sorting_algorithms/Quicksort#C
-  const star_t origin_star = {.position = {.x = 0, .y = 0, .z = 0}};
-  int i, j;
-  if (n < 2){
+//TODO: use log based enumeration sort?
+void sort(star_array_t array, unsigned start, unsigned end){//Quicksort, modified from http://rosettacode.org/wiki/Sorting_algorithms/Quicksort#C
+  //const star_t origin_star = {.position = {.x = 0, .y = 0, .z = 0}};
+  unsigned u, w;
+  if (end-start < 2){
     return;
   }
-  float_t pivot = star_dist(array[n / 2], origin_star);
-  for (i = 0, j = n - 1;; i++, j--) {
-    while (star_dist(array[i], origin_star) < pivot){
-      i++;
-    }
-    while (pivot < star_dist(array[j], origin_star)){
-      j--;
-    }
-    if (i >= j){
+  //TODO: compute and store the distances before sorting.
+  float_t x, y, z;
+  int pivot_loc = (start+end)/2;
+  x =  array.position.x[pivot_loc];
+  y =  array.position.y[pivot_loc];
+  z =  array.position.z[pivot_loc];
+  float_t pivot = len_3d(x, y, z);
+  float_t L;
+  for (u = start-1, w = end;;) {
+    do{
+      u++;
+      x =  array.position.x[u];
+      y =  array.position.y[u];
+      z =  array.position.z[u];
+      L = len_3d(x, y, z);
+    }while (L < pivot);
+    do{
+      w--;
+      x =  array.position.x[w];
+      y =  array.position.y[w];
+      z =  array.position.z[w];
+      L = len_3d(x, y, z);
+    }while(pivot < L);
+    if (u >= w){
       break;
     }
-    star_t tmp = array[i];
-    array[i] = array[j];
-    array[j] = tmp;
+
+    //swaps, big.
+    char tmp_type = array.spectralType[u];
+    array.spectralType[u] = array.spectralType[w];
+    array.spectralType[w] = tmp_type;
+
+    unsigned tmp_index = array.index[u];
+    array.index[u] = array.index[w];
+    array.index[w] = tmp_index;
+
+    float_t tmp_magnitude = array.magnitude[u];
+    array.magnitude[u] = array.magnitude[w];
+    array.magnitude[w] = tmp_magnitude;
+
+    float_t tmp_sub = array.subType[u];
+    array.subType[u] = array.subType[w];
+    array.subType[w] = tmp_sub;
+
+    float_t tmp_pos = array.position.x[u];
+    array.position.x[u] = array.position.x[w];
+    array.position.x[w] = tmp_pos;
+
+    tmp_pos = array.position.y[u];
+    array.position.y[u] = array.position.y[w];
+    array.position.y[w] = tmp_pos;
+
+    tmp_pos = array.position.z[u];
+    array.position.z[u] = array.position.z[w];
+    array.position.z[w] = tmp_pos;
   }
-  sort(array, i);
-  sort(array + i, n - i);
+  sort(array, start, u);
+  sort(array, u, end);
 }
 
-void fill_matrix(star_t *array, float_t *matrix, int size)
+void fill_matrix(star_array_t array, float_t *matrix, unsigned size)
 {
   for(unsigned u = 0; u < size; u++){
     for(unsigned w = u; w < size; w++){
-     sym_matrix_set(matrix, starfunc(array[u], array[w]) + star_dist(array[u], array[w]), w, u, size);
+      float_t func = starfunc(array.subType[u], array.subType[w]);
+      float_t dist = dist_3d(
+        array.position.x[u], array.position.y[u], array.position.z[u],
+        array.position.x[w], array.position.y[w], array.position.z[w]
+      );
+     sym_matrix_set(matrix,  func+dist, w, u, size);
     }
   }
 }
 
-void print_matrix(float_t* theMatrix, int n)
+void print_matrix(float_t* theMatrix, unsigned n)
 {
-  int i, j;
-  printf("\nprint_matrix, n = %d:\n", n);
+  unsigned i, j;
+  printf("\nprint_matrix, n = %u:\n", n);
   for(i = 0 ; i < n; i++)
     {
       for(j = 0 ; j < n ; j++)
@@ -167,7 +246,7 @@ void create_tally_matrix(float_t *in, float_t* out, unsigned N){
 
 unsigned get_hist_index(float_t min, float_t bin_size, unsigned hist_size, float_t val){
   unsigned hist_index;
-  for(hist_index = 0; hist_index < hist_size-1; hist_index++){
+  for(hist_index = 0; hist_index < hist_size-1; hist_index++){//TODO: direct computation
     if(min + bin_size*(1+hist_index) > val){
       break;
     }
@@ -175,7 +254,7 @@ unsigned get_hist_index(float_t min, float_t bin_size, unsigned hist_size, float
   return hist_index;
 }
 
-hist_param_t generate_histogram(float_t *matrix, int *histogram, int mat_size, int hist_size){
+hist_param_t generate_histogram(float_t *matrix, unsigned *histogram, unsigned mat_size, unsigned hist_size){
   float_t min = FLT_MAX, max = -min;
   for(unsigned u = 0; u < mat_size*(1+mat_size)/2; u++){//TODO: calculate when filling matrix
     if(matrix[u] > max){
@@ -208,7 +287,7 @@ hist_param_t generate_histogram(float_t *matrix, int *histogram, int mat_size, i
 void display_histogram(int *histogram, hist_param_t histparams)
 {
   printf("\ndisplay_histogram:\n");
-  int i,j;
+  unsigned i,j;
   for(i = 0; i < histparams.hist_size && histparams.bin_size*i < histparams.max; i++)
     {
       printf("%11.3e ", histparams.bin_size*i+histparams.min);

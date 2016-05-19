@@ -20,14 +20,18 @@ unsigned sym_matrix_coordinate(unsigned x, unsigned y, unsigned size);
 float_t sym_matrix_get(float_t *matrix, unsigned x, unsigned y, unsigned size);
 void sym_matrix_set(float_t *matrix, float_t value, unsigned x, unsigned y, unsigned size);
 
-void create_random_array(star_t * array, int size);
-void sort(star_t* array, int n);
-void print_stars(star_t* array, int n);
+star_array_t star_array_initialize(size_t size);
+void star_array_free(star_array_t star_array);
+void create_random_array(star_array_t stars, unsigned size);
 
-void fill_matrix(star_t * array, float_t *matrix, int size);
-void print_matrix(float_t* matrix, int n);
+//void create_random_array(star_array_t star_array, int size);
+void sort(star_array_t array, unsigned offset, unsigned n);
+void print_stars(star_array_t array, unsigned n);
 
-hist_param_t generate_histogram(float_t *matrix, int *histogram, int mat_size, int hist_size);
+void fill_matrix(star_array_t array, float_t *matrix, unsigned size);
+void print_matrix(float_t* matrix, unsigned n);
+
+hist_param_t generate_histogram(float_t *matrix, unsigned *histogram, unsigned mat_size, unsigned hist_size);
 void create_tally_matrix(float_t *in, float_t* out, unsigned N);
 
 void display_histogram(int *histogram, hist_param_t histparams);

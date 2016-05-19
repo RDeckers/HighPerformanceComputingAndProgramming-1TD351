@@ -28,11 +28,11 @@ int main(int argc, char **argv)
     report(WARN, "Superflous arguments given");
   }
   N = use_refference ? 7 : atoi(argv[1]);
-  star_t *stars = malloc(N*sizeof(star_t));
-  if(!stars){
-    report(FAIL, "Failed to allocate star array: %s (%d)", strerror(errno), errno);
-    return -1;
-  }
+  star_array_t stars = star_array_initialize(N);
+  // if(!stars){
+  //   report(FAIL, "Failed to allocate star array: %s (%d)", strerror(errno), errno);
+  //   return -1;
+  // }
 
   //create_random_array(stars, N);
   tick(&T);
@@ -41,7 +41,7 @@ int main(int argc, char **argv)
   print_stars(stars, N);
 
   tick(&T);
-  sort(stars, N);
+  sort(stars, 0, N);
   report(PASS, "Sorted star array in %ens", elapsed_since(&T));
   print_stars(stars, N);
 

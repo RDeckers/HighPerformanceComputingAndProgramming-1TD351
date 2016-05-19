@@ -1,6 +1,6 @@
 /*****
  *  Code for examination project in High Performance Computing and Programming
- * 
+ *
  *  ref_input.c header file for reference input that can be used to
  *  verify correctness for N=7
  *
@@ -16,6 +16,6 @@
 
 #include "common.h"
 
-void create_ref_star_array(star_t * stars, int size);
+void create_ref_star_array(star_array_t stars, int size);
 
 #endif
