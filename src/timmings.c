@@ -16,6 +16,7 @@
 #include <utilities/logging.h>
 #include <utilities/integer.h>
 #include <utilities/benchmarking.h>
+#include <utilities/vector_types.h>
 #include <math.h>
 #include <time.h>
 
@@ -36,12 +37,12 @@ int main(int argc, char **argv)
     //   report(FAIL, "Failed to allocate star array: %s (%d)", strerror(errno), errno);
     //   return -1;
     // }
-    float_t *matrix = malloc(sizeof(float_t)*triag_nr(N));
+    float_t *matrix = sym_matrix_new(N);
     if(!matrix){
       report(FAIL, "Failed to allocate matrix: %s (%d)", strerror(errno), errno);
       return -1;
     }
-    float_t *tally = malloc(sizeof(float_t)*triag_nr(N-2));
+    float_t *tally = sym_matrix_new(N-2);
     if(!matrix){
       report(FAIL, "Failed to allocate tally: %s (%d)", strerror(errno), errno);
       return -1;
@@ -82,7 +83,7 @@ int main(int argc, char **argv)
     printf("%e\n", total_time);
     report(PASS, "Finished size %u in >%ens", N, total_time);
     star_array_free(stars);
-    free(matrix);
-    free(tally);
+    sym_matrix_free(matrix);
+    sym_matrix_free(tally);
   }
 }

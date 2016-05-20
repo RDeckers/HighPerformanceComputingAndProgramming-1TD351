@@ -37,19 +37,35 @@ float_t rngf(float_t min, float_t max){
   return min+((float_t)rng()/RAND_MAX)*(max-min);
 }
 
-unsigned sym_matrix_coordinate(unsigned x, unsigned y, unsigned size){ //http://stackoverflow.com/q/19143657/6019199
-  if(x < y){//TODO: can we do this branchless?
-    return sym_matrix_coordinate(y,x,size);
-  }
-  return x+triag_nr(size)-triag_nr(size-y)-y; //triag_nr can overflow for > sqrtf(UNSIGNED_MAX), 64k for 32 bit.
+sym_matrix_t sym_matrix_intitialize(unsigned N){
+  return _mm_malloc(sizeof(float_t)*64*triag_nr((N+7)/8), 32);
 }
 
-float_t sym_matrix_get(float_t *matrix, unsigned x, unsigned y, unsigned size){
-  return matrix[sym_matrix_coordinate(x,y,size)];
+void sym_matrix_free(sym_matrix_t sym_matrix){
+  _mm_free(sym_matrix);
 }
+//
+// unsigned sym_matrix_coordinate(unsigned x, unsigned y, unsigned size){ //http://stackoverflow.com/q/19143657/6019199
+//   if(x < y){//TODO: can we do this branchless?
+//     return sym_matrix_coordinate(y,x,size);
+//   }
+//   return x+triag_nr(size)-triag_nr(size-y)-y; //triag_nr can overflow for > sqrtf(UNSIGNED_MAX), 64k for 32 bit.
+// }
+//
+// mat8x8f_t sym_matrix_get_block(sym_matrix_t matrix, unsigned x, unsigned y, unsigned size){
+//   return matrix[sym_matrix_coordinate(x,y,size)];
+// }
+//
+// void sym_matrix_set_vec(float_t *matrix, v8f value, unsigned x, unsigned y, unsigned size){
+//   *(v8f*)(matrix+sym_matrix_coordinate(x/8,y/8,size/8)) = value;
+// }
+//
+// void sym_matrix_set(float_t *matrix, float_t value, unsigned x, unsigned y, unsigned size){
+//   matrix[sym_matrix_coordinate(x,y,size)] = value;
+// }
 
-void sym_matrix_set(float_t *matrix, float_t value, unsigned x, unsigned y, unsigned size){
-  matrix[sym_matrix_coordinate(x,y,size)] = value;
+unsigned sym_matrix_get_block_index(unsigned x, unsigned y, unsigned size){
+  return x+triag_nr(size)-triag_nr(size-y)-y;
 }
 
 star_array_t star_array_initialize(size_t size){
@@ -123,14 +139,14 @@ v8f dist_3d_vec(v8f x0, v8f y0, v8f z0, v8f x1, v8f y1, v8f z1){
 }
 
 float_t starfunc(float_t a, float_t b){ //symmetrical, pure
-  //v8f x = _mm256_broadcast_ps(stars.subType[a]);
+  //v8f x = _mm256_broadcast_ss(stars.subType[a]);
   //v8f y = *((v8d*)&stars.subType[b]);
   const float_t c = 1.0/0.6; //compile time evaluation.
   return sqrtf(b+a*(1+b*c));//2 * FMA, 1 SQRT//TODO:replace sqrt with something faster http://stackoverflow.com/questions/1528727/why-is-sse-scalar-sqrtx-slower-than-rsqrtx-x
 }
 
 v8f starfunc_vec(v8f a, v8f b){ //symmetrical, pure
-  //v8f x = _mm256_broadcast_ps(stars.subType[a]);
+  //v8f x = _mm256_broadcast_ss(stars.subType[a]);
   //v8f y = *((v8d*)&stars.subType[b]);
   const float_t c = 1.0/0.6; //compile time evaluation.
   return _mm256_sqrt_ps(b+a*(1+b*c));//2 * FMA, 1 SQRT//TODO:replace sqrt with something faster http://stackoverflow.com/questions/1528727/why-is-sse-scalar-sqrtx-slower-than-rsqrtx-x
@@ -204,13 +220,34 @@ void sort(star_array_t array, unsigned start, unsigned end){//Quicksort, modifie
   sort(array, u, end);
 }
 
-void fill_matrix(star_array_t array, float_t *matrix, unsigned size)
+void fill_matrix(star_array_t array, sym_matrix_t matrix, unsigned size)
 {
-  for(unsigned u = 0; u < size; u++){
-    for(unsigned w = u; w < size; w++){
-      float_t func = starfunc(array.subType[u], array.subType[w]);
+  report(INFO, "starting to fill matrix");
+  for(unsigned u = 0; u < size; u++){ //loop over each element in array
+    v8f subType = _mm256_broadcast_ss(array.subType+u);
+    v8f x = _mm256_broadcast_ss(array.position.x+u);
+    v8f y = _mm256_broadcast_ss(array.position.y+u);
+    v8f z = _mm256_broadcast_ss(array.position.z+u);
+    unsigned w;
+    report(INFO, "starting vector loop");
+    for(w = u/8; w < size/8; w++){//set a block of the matrix
+      unsigned flat_index = sym_matrix_get_block_index(w, u)
+      v8f subType_b = *(v8f*)(array.subType+w);
+      v8f func = starfunc_vec(subType, subType_b);
+      v8f x_b = *(v8f*)(array.position.x+w);
+      v8f y_b = *(v8f*)(array.position.y+w);
+      v8f z_b = *(v8f*)(array.position.z+w);
+      v8f dist = dist_3d_vec(
+        x, y, z,
+        x_b, y_b, z_b
+      );
+     sym_matrix_set_vec(matrix,  func+dist, w, u, size);
+    }
+    report(INFO, "starting scalar loop");
+    for(; w < size; w++){
+      float_t func = starfunc(subType[0], array.subType[w]);
       float_t dist = dist_3d(
-        array.position.x[u], array.position.y[u], array.position.z[u],
+        x[0], y[0], z[0],
         array.position.x[w], array.position.y[w], array.position.z[w]
       );
      sym_matrix_set(matrix,  func+dist, w, u, size);
