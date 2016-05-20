@@ -37,12 +37,12 @@ int main(int argc, char **argv)
     //   report(FAIL, "Failed to allocate star array: %s (%d)", strerror(errno), errno);
     //   return -1;
     // }
-    float_t *matrix = sym_matrix_new(N);
+    sym_matrix_t matrix = sym_matrix_intitialize(N);
     if(!matrix){
       report(FAIL, "Failed to allocate matrix: %s (%d)", strerror(errno), errno);
       return -1;
     }
-    float_t *tally = sym_matrix_new(N-2);
+    sym_matrix_t tally = sym_matrix_intitialize(N-2);
     if(!matrix){
       report(FAIL, "Failed to allocate tally: %s (%d)", strerror(errno), errno);
       return -1;

@@ -32,7 +32,7 @@ void sort(star_array_t array, unsigned offset, unsigned n);
 void print_stars(star_array_t array, unsigned n);
 
 void fill_matrix(star_array_t array, float_t *matrix, unsigned size);
-void print_matrix(float_t* matrix, unsigned n);
+void print_matrix(sym_matrix_t matrix, unsigned n);
 
 hist_param_t generate_histogram(float_t *matrix, unsigned *histogram, unsigned mat_size, unsigned hist_size);
 void create_tally_matrix(float_t *in, float_t* out, unsigned N);

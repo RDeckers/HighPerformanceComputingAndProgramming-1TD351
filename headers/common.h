@@ -15,7 +15,7 @@
 
 typedef float float_t;
 #define NUM_HIST_BOXES 10
-typedef struct float_t* sym_matrix_t;
+typedef float_t* sym_matrix_t;
 typedef struct star{
   unsigned index;                   // counting index
   char spectralType;           // random: O, B, A, F, G, K, M, L, T

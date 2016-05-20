@@ -38,34 +38,38 @@ float_t rngf(float_t min, float_t max){
 }
 
 sym_matrix_t sym_matrix_intitialize(unsigned N){
-  return _mm_malloc(sizeof(float_t)*64*triag_nr((N+7)/8), 32);
+  return _mm_malloc(sizeof(float_t)*64*triag_nr((N+7)/8), 32); //8x8 blocks, upper triangular part.
 }
 
 void sym_matrix_free(sym_matrix_t sym_matrix){
+  //report(WARN, "freeing %p", sym_matrix);
   _mm_free(sym_matrix);
 }
 //
-// unsigned sym_matrix_coordinate(unsigned x, unsigned y, unsigned size){ //http://stackoverflow.com/q/19143657/6019199
-//   if(x < y){//TODO: can we do this branchless?
-//     return sym_matrix_coordinate(y,x,size);
-//   }
-//   return x+triag_nr(size)-triag_nr(size-y)-y; //triag_nr can overflow for > sqrtf(UNSIGNED_MAX), 64k for 32 bit.
-// }
-//
-// mat8x8f_t sym_matrix_get_block(sym_matrix_t matrix, unsigned x, unsigned y, unsigned size){
-//   return matrix[sym_matrix_coordinate(x,y,size)];
-// }
-//
+unsigned sym_matrix_coordinate(unsigned x, unsigned y, unsigned size){ //http://stackoverflow.com/q/19143657/6019199
+  if(x < y){//TODO: can we do this branchless?
+    return sym_matrix_coordinate(y,x,size); //if lower half, return upper half equivalent.
+  }
+  //base offset + (size of whole matrix - size of all rows below - offset into x.)
+  unsigned base = x;
+  unsigned base_offset = y;
+  unsigned size_matrix = triag_nr((size+7)/8)*64;
+  unsigned size_below = triag_nr((size+7)/8-(y/8))*64;//blocks below including current block,
+  size_below -= (y%8)*(8*(size+7-y)/8); //rows into current block * size of current rows
+  return base - base_offset + size_matrix - size_below; //triag_nr can overflow for > sqrtf(UNSIGNED_MAX), 64k for 32 bit.
+}
+
+
 // void sym_matrix_set_vec(float_t *matrix, v8f value, unsigned x, unsigned y, unsigned size){
 //   *(v8f*)(matrix+sym_matrix_coordinate(x/8,y/8,size/8)) = value;
 // }
-//
-// void sym_matrix_set(float_t *matrix, float_t value, unsigned x, unsigned y, unsigned size){
-//   matrix[sym_matrix_coordinate(x,y,size)] = value;
-// }
 
-unsigned sym_matrix_get_block_index(unsigned x, unsigned y, unsigned size){
-  return x+triag_nr(size)-triag_nr(size-y)-y;
+void sym_matrix_set(sym_matrix_t matrix, float_t value, unsigned x, unsigned y, unsigned size){
+  matrix[sym_matrix_coordinate(x,y,size)] = value;
+}
+
+unsigned sym_matrix_get(sym_matrix_t matrix, unsigned x, unsigned y, unsigned size){
+  return matrix[sym_matrix_coordinate(x,y,size)];
 }
 
 star_array_t star_array_initialize(size_t size){
@@ -142,6 +146,7 @@ float_t starfunc(float_t a, float_t b){ //symmetrical, pure
   //v8f x = _mm256_broadcast_ss(stars.subType[a]);
   //v8f y = *((v8d*)&stars.subType[b]);
   const float_t c = 1.0/0.6; //compile time evaluation.
+  //TODO: lookup?
   return sqrtf(b+a*(1+b*c));//2 * FMA, 1 SQRT//TODO:replace sqrt with something faster http://stackoverflow.com/questions/1528727/why-is-sse-scalar-sqrtx-slower-than-rsqrtx-x
 }
 
@@ -222,60 +227,53 @@ void sort(star_array_t array, unsigned start, unsigned end){//Quicksort, modifie
 
 void fill_matrix(star_array_t array, sym_matrix_t matrix, unsigned size)
 {
-  report(INFO, "starting to fill matrix");
-  for(unsigned u = 0; u < size; u++){ //loop over each element in array
-    v8f subType = _mm256_broadcast_ss(array.subType+u);
-    v8f x = _mm256_broadcast_ss(array.position.x+u);
-    v8f y = _mm256_broadcast_ss(array.position.y+u);
-    v8f z = _mm256_broadcast_ss(array.position.z+u);
-    unsigned w;
-    report(INFO, "starting vector loop");
-    for(w = u/8; w < size/8; w++){//set a block of the matrix
-      unsigned flat_index = sym_matrix_get_block_index(w, u)
-      v8f subType_b = *(v8f*)(array.subType+w);
-      v8f func = starfunc_vec(subType, subType_b);
-      v8f x_b = *(v8f*)(array.position.x+w);
-      v8f y_b = *(v8f*)(array.position.y+w);
-      v8f z_b = *(v8f*)(array.position.z+w);
+  //report(INFO, "starting to fill matrix");
+  const unsigned block_count = (size+7)/8;
+  unsigned row_offset = 0;
+  for(unsigned u = 0; u < size; u++){ //loop over each row, vertical
+    //report(INFO, "%u -> %u [%u]", u, row_offset, size);
+    v8f subType_r = _mm256_broadcast_ss(array.subType+u);
+    v8f x_r = _mm256_broadcast_ss(array.position.x+u);
+    v8f y_r = _mm256_broadcast_ss(array.position.y+u);
+    v8f z_r = _mm256_broadcast_ss(array.position.z+u);
+    for(unsigned w = 0; w < block_count-u/8; w++){//for each block in row.
+      v8f subType_c = ((v8f*)array.subType)[w];
+      v8f func = starfunc_vec(subType_r, subType_c);
+      v8f x_c = ((v8f*)(array.position.x))[w];
+      v8f y_c = ((v8f*)(array.position.y))[w];
+      v8f z_c = ((v8f*)(array.position.z))[w];
       v8f dist = dist_3d_vec(
-        x, y, z,
-        x_b, y_b, z_b
+        x_r, y_r, z_r,
+        x_c, y_c, z_c
       );
-     sym_matrix_set_vec(matrix,  func+dist, w, u, size);
+      //report(INFO, "writing to %p, bounds = [%p, %p]", ((v8f*)matrix)+row_offset+w, matrix, matrix+sym_matrix_coordinate(size-1, size-1, size));
+      ((v8f*)matrix)[row_offset+w] = func+dist;
     }
-    report(INFO, "starting scalar loop");
-    for(; w < size; w++){
-      float_t func = starfunc(subType[0], array.subType[w]);
-      float_t dist = dist_3d(
-        x[0], y[0], z[0],
-        array.position.x[w], array.position.y[w], array.position.z[w]
-      );
-     sym_matrix_set(matrix,  func+dist, w, u, size);
-    }
+    row_offset += (block_count-u/8); //offset into start of this row.
   }
 }
 
-void print_matrix(float_t* theMatrix, unsigned n)
+void print_matrix(sym_matrix_t theMatrix, unsigned n)//TODO: fix
 {
-  unsigned i, j;
-  printf("\nprint_matrix, n = %u:\n", n);
-  for(i = 0 ; i < n; i++)
-    {
-      for(j = 0 ; j < n ; j++)
-	printf("%1.4e " , sym_matrix_get(theMatrix, j, i, n));
-      putchar('\n');
-    }
+   unsigned i, j;
+   printf("\nprint_matrix, n = %u:\n", n);
+   for(i = 0 ; i < n; i++)
+     {
+       for(j = 0 ; j < n ; j++)
+	 printf("%1.4e " , sym_matrix_get(theMatrix, j, i, n));
+       putchar('\n');
+     }
 }
 
 void create_tally_matrix(float_t *in, float_t* out, unsigned N){
   for(unsigned u = 1; u < N-1; u++){
-    for(unsigned w = u; w < N-1; w++){
+    for(unsigned w = u; w < N-1; w++){//TODO: fix
       float_t center = sym_matrix_get(in, w, u, N);
       float_t up = sym_matrix_get(in, w, u+1, N);
       float_t down = sym_matrix_get(in, w, u-1, N);
       float_t left = sym_matrix_get(in, w-1,u, N);
       float_t right = sym_matrix_get(in, w+1, u, N);
-      float_t mean_abs_diff = 0.25*(fabs(center-up) + fabs(center-down) + fabs(center-left) + fabs(center-right));
+      float_t mean_abs_diff = 0.25*(fabs(center-up) + fabs(center-down) + fabs(center-left) + fabs(center-right)); //TODO: interleave x direction. update in blocks, dual pass.
       sym_matrix_set(out, mean_abs_diff, w-1, u-1, N-2);
     }
   }
