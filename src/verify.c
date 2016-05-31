@@ -29,6 +29,7 @@ int main(int argc, char **argv)
   }
   N = use_refference ? 7 : atoi(argv[1]);
   star_array_t stars = star_array_initialize(N);
+  star_array_t sorted_stars = star_array_initialize(N);
   // if(!stars){
   //   report(FAIL, "Failed to allocate star array: %s (%d)", strerror(errno), errno);
   //   return -1;
@@ -41,9 +42,9 @@ int main(int argc, char **argv)
   print_stars(stars, N);
 
   tick(&T);
-  sort(stars, 0, N);
+  optim_sort(stars, sorted_stars, N);
   report(PASS, "Sorted star array in %ens", elapsed_since(&T));
-  print_stars(stars, N);
+  print_stars(sorted_stars, N);
 
   sym_matrix_t matrix = sym_matrix_intitialize(N);
   if(!matrix){
@@ -58,7 +59,7 @@ int main(int argc, char **argv)
   }
 
   tick(&T);
-  fill_matrix(stars, matrix, N);
+  fill_matrix(sorted_stars, matrix, N);
   report(PASS, "Filled matrix in %ens", elapsed_since(&T));
 
   print_matrix(matrix, N);

@@ -12,7 +12,7 @@ set format y "10^{%L}"
 set grid mxtics mytics
 set yrange [10**3:10**11]
 
-plot 'data/timmings.dat' using 1:2 w l title "Allocations",\
+plot 'data/timmings_reference.dat' using 1:2 w l title "Allocations",\
   '' u 1:3 w l title "Create array",\
   '' u 1:4 w l title "Sort array",\
   '' u 1:5 w l title "Fill matrix",\

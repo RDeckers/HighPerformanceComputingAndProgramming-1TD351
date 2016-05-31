@@ -14,6 +14,7 @@
 #include <math.h>
 #include <float.h>
 #include <stdio.h>
+#include <stdint.h>
 
 sym_matrix_t sym_matrix_intitialize(unsigned N){
   return _mm_malloc(sizeof(float_t)*64*triag_nr((N+7)/8), 32); //8x8 blocks, upper triangular part.
@@ -26,7 +27,7 @@ void sym_matrix_free(sym_matrix_t sym_matrix){
 star_array_t star_array_initialize(size_t size){
   star_array_t star_array;
   star_array.spectralType = malloc(sizeof(char)*size);
-  star_array.index = malloc(sizeof(unsigned)*size);
+  star_array.index = _mm_malloc(sizeof(unsigned)*size, 32);
   size = (size+7) & ~7;//round up to multiple of 8.
   star_array.magnitude = _mm_malloc(sizeof(float_t)*size, 32);
   star_array.subType = _mm_malloc(sizeof(float_t)*size, 32);
@@ -38,7 +39,7 @@ star_array_t star_array_initialize(size_t size){
 
 void star_array_free(star_array_t star_array){
   free(star_array.spectralType);
-  free(star_array.index);
+  _mm_free(star_array.index);
   _mm_free(star_array.magnitude);
   _mm_free(star_array.subType);
   _mm_free(star_array.position.x);
@@ -101,11 +102,77 @@ v8f starfunc_vec(v8f a, v8f b){ //symmetrical, pure
   return _mm256_sqrt_ps(b+a*(1+b*c));//2 * FMA, 1 SQRT//TODO:replace sqrt with something faster http://stackoverflow.com/questions/1528727/why-is-sse-scalar-sqrtx-slower-than-rsqrtx-x
 }
 
+void quicksort(uint64_t *array, unsigned size){
+  unsigned u, w;
+  if (size < 2){
+    return;
+  }
+  uint64_t pivot = array[size/2];
+  for (u = 0, w = size-1;; u++, w--) {
+    while (array[u] < pivot){
+      u++;
+    }
+    while(pivot < array[w]){
+      w--;
+    }
+    if (u >= w){
+      break;
+    }
+    uint64_t temp = array[u];
+    array[u] = array[w];
+    array[w] = temp;
+  }
+  quicksort(array, u);
+  quicksort(array+u, size-u);
+}
+
+void optim_sort(star_array_t array, star_array_t out_array, unsigned size){
+  union sort_tag{
+    uint64_t fused;
+    struct {
+      uint32_t index;
+      float_t distance;
+    }__attribute__((packed)) seperate;
+  };
+  uint64_t *sortable = _mm_malloc(sizeof(uint64_t)*size,32);
+  //TODO: bugfix
+  // unsigned u;
+  // for(u = 0; u < size/8; u++){
+  //   v8f x = _mm256_load_ps(array.position.x+8*u);
+  //   v8f y = _mm256_load_ps(array.position.y+8*u);
+  //   v8f z = _mm256_load_ps(array.position.z+8*u);
+  //   v8f lengths = len_3d_vec(x, y, z);
+  //   v8f indices =  _mm256_load_ps((float_t*)(array.index+8*u));
+  //   _mm256_store_ps((float_t*)(sortable+16*u), _mm256_unpackhi_ps(indices, lengths));
+  //   _mm256_store_ps((float_t*)(sortable+16*u+8), _mm256_unpacklo_ps(indices, lengths));
+  // }
+  for(unsigned u = 0 ;u < size; u++){
+    float_t x =  array.position.x[u];
+    float_t y =  array.position.y[u];
+    float_t z =  array.position.z[u];
+    float_t L = len_3d(x, y, z);
+    uint32_t index = array.index[u];
+    union sort_tag unified = {.seperate = {.distance = L, .index = index}};
+    sortable[u] = (unified).fused;
+  }
+  quicksort(sortable, size);
+  for(unsigned u = 0; u < size; u++){
+    unsigned w = ((union sort_tag*)sortable)[u].seperate.index;
+    //swap.
+    out_array.spectralType[u] = array.spectralType[w];
+    out_array.index[u] = w;
+    out_array.magnitude[u] = array.magnitude[w];
+    out_array.subType[u] = array.subType[w];
+    out_array.position.x[u] = array.position.x[w];
+    out_array.position.y[u] = array.position.y[w];
+    out_array.position.z[u] = array.position.z[w];
+  }
+  _mm_free(sortable);
+}
 
 //TODO: use log (or something) based enumeration sort first (list of varrarray?)
 //TODO: create an array of struct{distance, index}(packed) and sort using uint64_t comparisons.
 void sort(star_array_t array, unsigned start, unsigned end){//Quicksort, modified from http://rosettacode.org/wiki/Sorting_algorithms/Quicksort#C
-  //const star_t origin_star = {.position = {.x = 0, .y = 0, .z = 0}};
   unsigned u, w;
   if (end-start < 2){
     return;
@@ -315,27 +382,6 @@ hist_param_t generate_histogram(float_t *matrix, unsigned *histogram, unsigned m
     .max = max,
     .bin_size = (max-min)/(hist_size)
   };
-  //report(INFO, "bounds are: %1.4e, %1.4e", min, max);
-  // unsigned loc =0;
-  // for(unsigned b = 0; b < bounds; b++){
-  //   unsigned index = get_hist_index(min, param.bin_size, hist_size, matrix[b]);
-  //   histogram[index] += 2;
-  // }
-  // unsigned diagonal_index = 0;
-  // for(unsigned u = 0; u < mat_size; u++){
-  //   unsigned index = get_hist_index(min, param.bin_size, hist_size, matrix[diagonal_index]);
-  //   histogram[index] -= 1;
-  //   diagonal_index += mat_size-u;
-  // }
-  // for(unsigned y = 0; y < mat_size; y++){
-  //   unsigned index = get_hist_index(min, param.bin_size, hist_size, matrix[loc++]);
-  //   histogram[index] += 1;
-  //   for(unsigned x = 1; x < mat_size-y; x++){
-  //     unsigned index = get_hist_index(min, param.bin_size, hist_size, matrix[loc++]);
-  //     histogram[index] += 2;
-  //   }
-  // }
-  //report(PASS, "looked at up to %u (%1.4e)", loc, matrix[0]);
 
   for(unsigned u = 0; u < mat_size; u++){
     unsigned b = triag_nr(mat_size)-triag_nr(mat_size-u);

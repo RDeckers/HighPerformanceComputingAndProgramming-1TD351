@@ -8,7 +8,7 @@
  *
  **/
 
-#include <funcs.h>
+#include <reference_functions.h>
 #include <ref_input.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -32,14 +32,14 @@ int main(int argc, char **argv)
 
 
     tick(&T);
-    star_array_t stars = star_array_initialize(N);
-    star_array_t sorted_stars = star_array_initialize(N);
-    sym_matrix_t matrix = sym_matrix_intitialize(N);
+    star_t *stars = malloc(sizeof(star_t)*N);
+    //reference_create_ref_star_array(stars, N);
+    float_t *matrix =  malloc(sizeof(float_t)*N*N);
     if(!matrix){
       report(FAIL, "Failed to allocate matrix: %s (%d)", strerror(errno), errno);
       return -1;
     }
-    float_t *tally =  malloc(sizeof(float_t)*triag_nr(N-2));
+    float_t *tally =  malloc(sizeof(float_t)*N*N);
     if(!tally){
       report(FAIL, "Failed to allocate tally: %s (%d)", strerror(errno), errno);
       return -1;
@@ -49,40 +49,38 @@ int main(int argc, char **argv)
     total_time += time_taken;
 
     tick(&T);
-    create_random_array(stars, N);
+    reference_create_random_array(stars, N);
     time_taken = tock(&T);
     total_time += time_taken;
     printf("%e ", time_taken);
 
     tick(&T);
-    optim_sort(stars, sorted_stars, N);
-
+    reference_sort(stars, N);
     time_taken = tock(&T);
     total_time += time_taken;
     printf("%e ", time_taken);
 
     tick(&T);
-    fill_matrix(sorted_stars, matrix, N);
+    reference_fill_matrix(stars, matrix, N);
     time_taken = tock(&T);
     total_time += time_taken;
     printf("%e ", time_taken);
 
     tick(&T);
-    create_tally_matrix(matrix, tally, N);
+    reference_create_tally_matrix(matrix, tally, N);
     time_taken = tock(&T);
     total_time += time_taken;
     printf("%e ", time_taken);
 
     tick(&T);
-    generate_histogram(tally, histogram, N-2, NUM_HIST_BOXES);
+    reference_generate_histogram(tally, histogram, N-2, NUM_HIST_BOXES);
     time_taken = tock(&T);
     total_time += time_taken;
     printf("%e ", time_taken);
     printf("%e\n", total_time);
     report(PASS, "Finished size %u in >%ens", N, total_time);
-    star_array_free(stars);
-    star_array_free(sorted_stars);
-    sym_matrix_free(matrix);
+    free(stars);
+    free(matrix);
     free(tally);
   }
 }

@@ -22,6 +22,7 @@ star_array_t star_array_initialize(size_t size);
 void star_array_free(star_array_t star_array);
 void create_random_array(star_array_t stars, unsigned size);
 
+void optim_sort(star_array_t array, star_array_t out_array, unsigned size);
 void sort(star_array_t array, unsigned offset, unsigned n);
 void print_stars(star_array_t array, unsigned n);
 
