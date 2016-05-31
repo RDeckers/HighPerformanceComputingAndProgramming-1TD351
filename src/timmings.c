@@ -32,18 +32,14 @@ int main(int argc, char **argv)
 
 
     tick(&T);
-    star_array_t stars = star_array_initialize(N);//malloc(N*sizeof(star_t));
-    // if(!stars){
-    //   report(FAIL, "Failed to allocate star array: %s (%d)", strerror(errno), errno);
-    //   return -1;
-    // }
+    star_array_t stars = star_array_initialize(N);
     sym_matrix_t matrix = sym_matrix_intitialize(N);
     if(!matrix){
       report(FAIL, "Failed to allocate matrix: %s (%d)", strerror(errno), errno);
       return -1;
     }
-    sym_matrix_t tally = sym_matrix_intitialize(N-2);
-    if(!matrix){
+    float_t *tally =  malloc(sizeof(float_t)*triag_nr(N-2));
+    if(!tally){
       report(FAIL, "Failed to allocate tally: %s (%d)", strerror(errno), errno);
       return -1;
     }
@@ -84,6 +80,6 @@ int main(int argc, char **argv)
     report(PASS, "Finished size %u in >%ens", N, total_time);
     star_array_free(stars);
     sym_matrix_free(matrix);
-    sym_matrix_free(tally);
+    free(tally);
   }
 }

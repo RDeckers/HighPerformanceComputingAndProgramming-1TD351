@@ -9,6 +9,7 @@ set logscale x 2
 set format x "2^{%L}"
 set format y "10^{%L}"
 
+set yrange [10**3:10**11]
 
 plot 'data/timmings.dat' using 1:2 w l title "Allocations",\
   '' u 1:3 w l title "Create array",\

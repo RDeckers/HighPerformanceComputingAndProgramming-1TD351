@@ -45,13 +45,13 @@ int main(int argc, char **argv)
   report(PASS, "Sorted star array in %ens", elapsed_since(&T));
   print_stars(stars, N);
 
-  float_t *matrix = malloc(sizeof(float_t)*N*N);
+  sym_matrix_t matrix = sym_matrix_intitialize(N);
   if(!matrix){
     report(FAIL, "Failed to allocate matrix: %s (%d)", strerror(errno), errno);
     return -1;
   }
 
-  float_t *tally = malloc(sizeof(float_t)*(N-1)*(N-1));
+  sym_matrix_t tally = sym_matrix_intitialize(N-2);
   if(!matrix){
     report(FAIL, "Failed to allocate tally: %s (%d)", strerror(errno), errno);
     return -1;
