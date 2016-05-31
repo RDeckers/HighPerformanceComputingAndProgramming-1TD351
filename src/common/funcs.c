@@ -20,39 +20,7 @@ sym_matrix_t sym_matrix_intitialize(unsigned N){
 }
 
 void sym_matrix_free(sym_matrix_t sym_matrix){
-  ////report(WARN, "freeing %p", sym_matrix);
   _mm_free(sym_matrix);
-}
-//
-unsigned sym_matrix_coordinate(unsigned x, unsigned y, unsigned size){ //http://stackoverflow.com/q/19143657/6019199
-  if(x < y){//TODO: can we do this branchless?
-    return sym_matrix_coordinate(y,x,size); //if lower half, return upper half equivalent.
-  }
-  //base offset + (size of whole matrix - size of all rows below - offset into x.)
-  unsigned block_count = (size+7)/8;
-  unsigned base = x;
-  unsigned base_offset = y;
-  unsigned size_matrix = triag_nr(block_count)*64;
-  unsigned size_below = triag_nr(block_count-(y/8))*64;//blocks below including current block,
-  size_below -= (y%8)*(8*(block_count-y/8)); //rows into current block * size of current rows
-  return base - base_offset + size_matrix - size_below; //triag_nr can overflow for > sqrt(UNSIGNED_MAX), 64k for 32 bit.
-}
-
-
-// void sym_matrix_set_vec(float_t *matrix, v8f value, unsigned x, unsigned y, unsigned size){
-//   *(v8f*)(matrix+sym_matrix_coordinate(x/8,y/8,size/8)) = value;
-// }
-
-void sym_matrix_add(sym_matrix_t matrix, float_t value, unsigned x, unsigned y, unsigned size){
-  matrix[sym_matrix_coordinate(x,y,size)] += value;
-}
-
-void sym_matrix_set(sym_matrix_t matrix, float_t value, unsigned x, unsigned y, unsigned size){
-  matrix[sym_matrix_coordinate(x,y,size)] = value;
-}
-
-unsigned sym_matrix_get(sym_matrix_t matrix, unsigned x, unsigned y, unsigned size){
-  return matrix[sym_matrix_coordinate(x,y,size)];
 }
 
 star_array_t star_array_initialize(size_t size){
@@ -89,8 +57,6 @@ void create_random_array(star_array_t stars, unsigned N){
     stars.position.x[u] = fast_rngf(-1e5, 1e5);
     stars.position.y[u] = fast_rngf(-1e5, 1e5);
     stars.position.z[u] = fast_rngf(-3e3, 3e3);
-    //TODO: change print function to work with this.
-    //sprintf(stars.designation[u], "%c%d.%d", stars.spectralType[u], stars.subType[u], stars.index[u]); //not safe for index >= 10^7
   }
 }
 
@@ -117,7 +83,6 @@ float_t dist_3d(float_t x0, float_t y0, float_t z0, float_t x1, float_t y1, floa
   return len_3d(dx, dy, dz);
 }
 
-//TODO: use struct index notation.
 v8f dist_3d_vec(v8f x0, v8f y0, v8f z0, v8f x1, v8f y1, v8f z1){
   v8f dx = (x0-x1);
   v8f dy = (y0-y1);
@@ -126,16 +91,12 @@ v8f dist_3d_vec(v8f x0, v8f y0, v8f z0, v8f x1, v8f y1, v8f z1){
 }
 
 float_t starfunc(float_t a, float_t b){ //symmetrical, pure
-  //v8f x = _mm256_broadcast_ss(stars.subType[a]);
-  //v8f y = *((v8d*)&stars.subType[b]);
   const float_t c = 1.0/0.6; //compile time evaluation.
   //TODO: lookup?
   return sqrtf(b+a*(1+b*c));//2 * FMA, 1 SQRT//TODO:replace sqrt with something faster http://stackoverflow.com/questions/1528727/why-is-sse-scalar-sqrtx-slower-than-rsqrtx-x
 }
 
 v8f starfunc_vec(v8f a, v8f b){ //symmetrical, pure
-  //v8f x = _mm256_broadcast_ss(stars.subType[a]);
-  //v8f y = *((v8d*)&stars.subType[b]);
   const float_t c = 1.0/0.6; //compile time evaluation.
   return _mm256_sqrt_ps(b+a*(1+b*c));//2 * FMA, 1 SQRT//TODO:replace sqrt with something faster http://stackoverflow.com/questions/1528727/why-is-sse-scalar-sqrtx-slower-than-rsqrtx-x
 }
@@ -214,47 +175,44 @@ void sort(star_array_t array, unsigned start, unsigned end){//Quicksort, modifie
 */
 void fill_matrix(star_array_t array, sym_matrix_t matrix, unsigned size)
 {
-  ////report(INFO, "starting to fill matrix");
   const unsigned block_count = (size+7)/8;
   unsigned row_offset = 0;
   for(unsigned u = 0; u < size; u++){ //loop over each row, vertical
-    ////report(INFO, "%u -> %u [%u]", u, row_offset, size);
     v8f subType_r = _mm256_broadcast_ss(array.subType+u);
     v8f x_r = _mm256_broadcast_ss(array.position.x+u);
     v8f y_r = _mm256_broadcast_ss(array.position.y+u);
     v8f z_r = _mm256_broadcast_ss(array.position.z+u);
     for(unsigned w = 0; w < block_count-u/8; w++){//for each block in row.
-      v8f subType_c = ((v8f*)array.subType)[w];
+      v8f subType_c = ((v8f*)array.subType)[w+u/8];
       v8f func = starfunc_vec(subType_r, subType_c);
-      v8f x_c = ((v8f*)(array.position.x))[w];
-      v8f y_c = ((v8f*)(array.position.y))[w];
-      v8f z_c = ((v8f*)(array.position.z))[w];
+      v8f x_c = ((v8f*)(array.position.x))[w+u/8];
+      v8f y_c = ((v8f*)(array.position.y))[w+u/8];
+      v8f z_c = ((v8f*)(array.position.z))[w+u/8];
       v8f dist = dist_3d_vec(
         x_r, y_r, z_r,
         x_c, y_c, z_c
       );
-      ////report(INFO, "writing to %p, bounds = [%p, %p]", ((v8f*)matrix)+row_offset+w, matrix, matrix+sym_matrix_coordinate(size-1, size-1, size));
       ((v8f*)matrix)[row_offset+w] = func+dist;
     }
     row_offset += (block_count-u/8); //offset into start of this row.
   }
 }
 
-void print_matrix(sym_matrix_t theMatrix, unsigned n)//TODO: fix
+void print_matrix(sym_matrix_t matrix, unsigned n)//TODO: fix
 {
-  for(unsigned u = 0; u < triag_nr((n+7)/8)*64; u++){
-    printf("%1.4e\n", theMatrix[u]);
+  unsigned index =0;
+  unsigned block_count = (n+7)/8;
+  for(unsigned y = 0; y < n; y++){
+    for(unsigned x = 0; x < y; x++){
+      printf("         ");
+    }
+    for(unsigned x = y; x < n; x++){
+      printf("%1.1e ", matrix[index+x-y+y%8]);
+    }
+    index += 8*(block_count-y/8);
+    puts("");
   }
-  //  unsigned i, j;
-  //  printf("\nprint_matrix, n = %u:\n", n);
-  //  for(i = 0 ; i < n; i++)
-  //    {
-  //      for(j = 0 ; j < n ; j++)
-	//  printf("%1.4e " , sym_matrix_get(theMatrix, j, i, n));
-  //      putchar('\n');
-  //    }
 }
-
 void set_min_max(float_t val, float_t *min, float_t *max){
   if(val < *min){
     *min = val;
@@ -265,102 +223,92 @@ void set_min_max(float_t val, float_t *min, float_t *max){
 }
 
 /*TODO:
-then vectorize
 then include max/min for histogram
 */
-
  float_t min;
  float_t max;
-void create_tally_matrix(float_t *in, float_t* out, unsigned N){
-  float_t up, center, left, down;
 
+v8f fabs_vec(v8f a){
+  const v8f sign_mask = _mm256_set1_ps(-0.f); // -0.f = 1 << 31
+  return _mm256_andnot_ps(sign_mask, a);
+}
+
+void create_tally_matrix(float_t *in, float_t* out, unsigned N){
+  float_t up, center, left, down, right;
+  v8f center_v, left_v, right_v, up_v;
   unsigned block_count = (N+7)/8;
   unsigned in_row_index = 8*block_count+1;//always points to the first element of the current row.
-  unsigned out_index = 1;
-  ////report(INFO, "row_index = %u", in_row_index);
-
-  //top left corner
-  down = in[in_row_index+8*block_count];
-  center = in[in_row_index];
-  left = in[in_row_index-1];
-  up = in[1];
-  out[0] = 0.25*(fabs(center-left)+fabs(center-up)+fabs(center-down)); //left up and down, next iteration sets right.
-  //top row
-  for(unsigned x = 1; x < N-2; x++){
-    left = center;
-    center = in[in_row_index+x];
-    up = in[x+1];
-    out[out_index-1] += 0.25*fabs(center-left);//right to previous element.
-    out[out_index] = 0.25*(fabs(center-left)+fabs(center-up)); //left and up.
-    out_index += 1;
-  }
-  out[out_index-1] += 0.25*(fabs(center-in[in_row_index+N-1]));//right for last element
-  //report(INFO, "wrote to %u first loop", out_index);
-  unsigned old_out_index = 0;
-  unsigned old_row_index = in_row_index;
-
-  min = max = out[0];
-
-  in_row_index += 8*block_count+1;
-  ////report(INFO, "row_index = %u", in_row_index);
-  //rest of the rows
-  unsigned row, column;
-  for(row = 2; row < N-1;){
+  unsigned old_row_index = 1;
+  unsigned out_index = 0;
+  unsigned old_out_index;
+  for(unsigned y = 1; y < N-1;){
+    unsigned x;
     center = in[in_row_index];
-    float_t up_and_left = in[old_row_index+1];//symmetry
-    float_t down = in[in_row_index+1];//symmetry
-    out[out_index] = 0.5*fabs(center-up_and_left)+0.25*down;
-    out[old_out_index+1] += 0.25*fabs(center-up_and_left);
-    set_min_max(out[old_out_index+1], &min, &max);
-    out_index += 1;
-    for(column = 1; column < (N-1)-row; column ++){
-      left = center;
-      center = in[in_row_index+column];
-      up = in[old_row_index+1+column];
-      out[out_index-1] += 0.25*fabs(center-left);//right to previous element.
-      out[old_out_index+1+column] += 0.25*fabs(center-up);//down to the previous element.
-      set_min_max(out[old_out_index+1+column], &min, &max);
-      out[out_index] = 0.25*(fabs(center-left)+fabs(center-up));//up and left of this element
-      out_index += 1;
+    float_t left_and_up = in[old_row_index];//symmetry on diagonal
+    float_t right_and_down = in[in_row_index+1];//symmetry on diagonal
+    out[out_index] = 0.5*(fabs(center-left_and_up)+fabs(center-right_and_down));
+    if(y != 1){
+      out[old_out_index] += 0.25*fabs(center-left_and_up);
     }
-    out[out_index-1] += 0.25*(fabs(center-in[in_row_index+N-1-row]));//right for last element in a row.
-    set_min_max(out[out_index-1], &min, &max);
-    //report(INFO, "wrote to %u loop %u", out_index, row-1);
-    old_out_index = out_index - (N-1)+row;
-    old_row_index = in_row_index;
-    row++;
-    in_row_index += 8*(block_count-row/8)+1;
-    ////report(INFO, "%u %u row_index = %u", N, row, in_row_index);
+    x= 1;
+    for(x = 1; x+8 < N-y-1; x+= 8){//TODO: N < 8?
+      left_v = _mm256_load_ps(in+in_row_index+x-1);//in_row_index points to central element
+      center_v = _mm256_loadu_ps(in+in_row_index+x);
+      right_v = _mm256_loadu_ps(in+in_row_index+x+1);
+      up_v = _mm256_loadu_ps(in+old_row_index+x); //old_row_index points to the start of the old row, offset by 1.
+      _mm256_storeu_ps(out+out_index+x,0.25*(fabs_vec(center_v-left_v)+fabs_vec(center_v-right_v)+fabs_vec(center_v-up_v))); //left right and up
+      if(y != 1){
+        _mm256_storeu_ps(out+old_out_index+x,  _mm256_loadu_ps(out+old_out_index+x)+0.25*fabs_vec(center_v-up_v));//add the 'down' element to the previous row.
+      }
+    }
+    for(;x < N-y-1;x++){
+      left = in[in_row_index+x-1];
+      center = in[in_row_index+x];
+      right = in[in_row_index+x+1];
+      up = in[old_row_index+x];
+      out[out_index+x] = 0.25*(fabs(center-left)+fabs(center-right)+fabs(center-up));
+      if(y != 1){
+        out[old_out_index+x] += 0.25*fabs(center-up);
+      }
+    }
+    old_out_index = out_index+1;
+    out_index += (N-y-1);
+    old_row_index = in_row_index+1;
+    y++;
+    in_row_index += 8*(block_count-y/8)+1;
+    //getchar();
   }
-  ////report(PASS,"Done, sampled up to %u, wrote to %u", old_row_index+column, out_index-1);
-  //float_t right = in[old_row_index+column];
-  //out[out_index - 1] += 0.25*fabs(center-right);
 }
 
 unsigned get_hist_index(float_t min, float_t bin_size, unsigned hist_size, float_t val){
   unsigned hist_index = (val-min)/bin_size;
-  //return hist_index;
-  //report(INFO, "assigning %1.4e to index %u (%f)", val, hist_index, (val-min)/bin_size);
   return hist_index >= hist_size ? hist_size-1 : hist_index;
-  // for(hist_index = 0; hist_index < hist_size-1; hist_index++){//TODO: direct computation
-  //   if(min + bin_size*(1+hist_index) > val){
-  //     break;
-  //   }
-  // }
-  // return hist_index;
+}
+
+void print_tally_matrix(float_t *matrix, unsigned size){
+  unsigned index = 0;
+  for(unsigned y = 0; y < size; y++){
+    for(unsigned x = 0; x < y; x++){
+      printf("         ");
+    }
+    for(unsigned x = y; x < size; x++){
+      printf("%1.1e ", matrix[index++]);
+    }
+    puts("");
+  }
 }
 
 hist_param_t generate_histogram(float_t *matrix, unsigned *histogram, unsigned mat_size, unsigned hist_size){
-  // float_t min = FLT_MAX, max = -min;
   unsigned bounds = triag_nr(mat_size);
-  // for(unsigned u = 0; u < bounds; u++){//TODO: calculate when filling matrix
-  //   if(matrix[u] > max){
-  //     max = matrix[u];
-  //   }
-  //   if(matrix[u] < min){
-  //     min = matrix[u];
-  //   }
-  // }
+  float_t min = FLT_MAX, max = -min;
+  for(unsigned u = 0; u < bounds; u++){//TODO: calculate when filling matrix
+    if(matrix[u] > max){
+      max = matrix[u];
+    }
+    if(matrix[u] < min){
+      min = matrix[u];
+    }
+  }
   const hist_param_t param = {
     .hist_size = hist_size,
     .min = min,

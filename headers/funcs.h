@@ -13,21 +13,15 @@
 
 #include "common.h"
 
-unsigned rng();
-float_t rngf(float_t min, float_t max);
+void print_tally_matrix(float_t *matrix, unsigned size);
 
 sym_matrix_t sym_matrix_intitialize(unsigned N);
 void sym_matrix_free(sym_matrix_t sym_matrix);
-// unsigned sym_matrix_coordinate(unsigned x, unsigned y, unsigned size);
-// float_t sym_matrix_get(sym_matrix_t matrix, unsigned x, unsigned y, unsigned size);
-// void sym_matrix_set(sym_matrix_t matrix, float_t value, unsigned x, unsigned y, unsigned size);
-// void sym_matrix_set_vec(sym_matrix_t matrix, v8f value, unsigned x, unsigned y, unsigned size);
 
 star_array_t star_array_initialize(size_t size);
 void star_array_free(star_array_t star_array);
 void create_random_array(star_array_t stars, unsigned size);
 
-//void create_random_array(star_array_t star_array, int size);
 void sort(star_array_t array, unsigned offset, unsigned n);
 void print_stars(star_array_t array, unsigned n);
 
